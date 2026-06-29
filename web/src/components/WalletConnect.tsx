@@ -14,11 +14,15 @@ import { Button, Badge } from "@/components/ui";
 
 export function WalletConnect() {
   const { address, isConnected } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
+  const { connectAsync, connectors, isPending, error: connectError } = useConnect();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
   const [open, setOpen] = useState(false);
+  const connectErrorMessage =
+    connectError && "shortMessage" in connectError
+      ? connectError.shortMessage
+      : connectError?.message;
 
   const wrongChain = isConnected && chainId !== ritualChain.id;
 
@@ -65,9 +69,13 @@ export function WalletConnect() {
           {list.map((connector) => (
             <button
               key={connector.uid}
-              onClick={() => {
-                connect({ connector });
-                setOpen(false);
+              onClick={async () => {
+                try {
+                  await connectAsync({ connector });
+                  setOpen(false);
+                } catch {
+                  // Error is surfaced below so the user can retry.
+                }
               }}
               className="block w-full px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/10"
             >
@@ -76,6 +84,11 @@ export function WalletConnect() {
           ))}
         </div>
       )}
+      {connectErrorMessage ? (
+        <p className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200 shadow-xl">
+          {connectErrorMessage}
+        </p>
+      ) : null}
     </div>
   );
 }

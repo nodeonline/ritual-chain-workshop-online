@@ -37,6 +37,7 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
   const [rubric, setRubric] = useState("");
   const [deadline, setDeadline] = useState(defaultDeadline());
   const [reward, setReward] = useState("");
+  const [privateMode, setPrivateMode] = useState(false);
   const [createdId, setCreatedId] = useState<bigint | null>(null);
 
   // Once confirmed, pull the new bountyId out of the BountyCreated event log.
@@ -47,7 +48,7 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
         eventName: "BountyCreated",
         logs: receipt.logs,
       });
-      const id = logs[0]?.args?.bountyId;
+      const id = (logs[0] as { args?: { bountyId?: bigint } } | undefined)?.args?.bountyId;
       if (id !== undefined) {
         setCreatedId(id);
         onCreated?.(id);
@@ -85,16 +86,17 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
       return;
     }
 
-    const deadlineTs = BigInt(Math.floor(deadlineMs / 1000));
+    const deadlineTs = BigInt(deadlineMs);
     console.log("Creating bounty with", { title, rubric, deadlineTs, reward });
     const value = reward.trim() === "" ? 0n : parseEther(reward.trim());
     setCreatedId(null);
 
     try {
+      const functionName = privateMode ? "createPrivateBounty" : "createBounty";
       await tx.run({
         address: contractAddress,
         abi: aiJudgeAbi,
-        functionName: "createBounty",
+        functionName,
         args: [title.trim(), rubric.trim(), deadlineTs],
         value,
         chainId: ritualChain.id,
@@ -157,6 +159,24 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
             </Field>
           </div>
 
+          <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={privateMode}
+              onChange={(e) => setPrivateMode(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-white/20 bg-zinc-950 text-emerald-400"
+            />
+            <span>
+              <span className="block font-medium text-zinc-100">
+                Ritual-native private bounty
+              </span>
+              <span className="block text-xs text-zinc-400">
+                Submissions are encrypted before they leave the browser and stay hidden until the
+                batch judge runs in Ritual&apos;s TEE.
+              </span>
+            </span>
+          </label>
+
           {validation && (title || rubric || reward) ? (
             <p className="text-xs text-amber-300">{validation}</p>
           ) : null}
@@ -166,7 +186,7 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
             disabled={!isConnected || !isContractConfigured || !!validation || tx.isBusy}
             className="w-full"
           >
-            {tx.isBusy ? "Creating…" : "Create bounty"}
+            {tx.isBusy ? "Creating…" : privateMode ? "Create private bounty" : "Create bounty"}
           </Button>
 
           {!isConnected && (

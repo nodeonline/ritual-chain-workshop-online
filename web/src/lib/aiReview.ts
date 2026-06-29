@@ -46,9 +46,20 @@ export function decodeAiReview(aiReviewHex?: string): DecodedAiReview | null {
 }
 
 function tryParseJudgeResult(text: string): JudgeResult | null {
-  const candidate = extractJson(text);
-  if (!candidate) return null;
+  const candidates = [
+    extractJson(text),
+    text.match(/\{[\s\S]*\}/)?.[0] ?? null,
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
+  for (const candidate of candidates) {
+    const parsed = parseJudgeCandidate(candidate);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function parseJudgeCandidate(candidate: string): JudgeResult | null {
   let obj: unknown;
   try {
     obj = JSON.parse(candidate);
@@ -59,16 +70,24 @@ function tryParseJudgeResult(text: string): JudgeResult | null {
   if (!obj || typeof obj !== "object") return null;
   const o = obj as Record<string, unknown>;
 
-  if (typeof o.winnerIndex !== "number") return null;
+  const winnerIndexValue = o.winnerIndex ?? o.winner_index;
+  const winnerIndex =
+    typeof winnerIndexValue === "number" ? winnerIndexValue : Number(winnerIndexValue);
+  if (!Number.isInteger(winnerIndex)) return null;
 
   const ranking: RankingEntry[] = Array.isArray(o.ranking)
     ? (o.ranking as unknown[])
         .map((r) => {
           if (!r || typeof r !== "object") return null;
           const e = r as Record<string, unknown>;
+          const indexValue = e.index ?? e.submissionIndex ?? e.submission_index;
+          const scoreValue = e.score ?? e.value;
+          const index = typeof indexValue === "number" ? indexValue : Number(indexValue);
+          const score = typeof scoreValue === "number" ? scoreValue : Number(scoreValue);
+          if (!Number.isInteger(index) || !Number.isFinite(score)) return null;
           return {
-            index: typeof e.index === "number" ? e.index : Number(e.index),
-            score: typeof e.score === "number" ? e.score : Number(e.score),
+            index,
+            score,
             reason: typeof e.reason === "string" ? e.reason : String(e.reason ?? ""),
           } satisfies RankingEntry;
         })
@@ -76,13 +95,18 @@ function tryParseJudgeResult(text: string): JudgeResult | null {
     : [];
 
   return {
-    winnerIndex: o.winnerIndex,
+    winnerIndex,
     ranking,
-    summary: typeof o.summary === "string" ? o.summary : "",
+    summary:
+      typeof o.summary === "string"
+        ? o.summary
+        : typeof o.overallSummary === "string"
+          ? o.overallSummary
+          : "",
   };
 }
 
-/** Strip markdown fences and isolate the first {...} block. */
+/** Strip markdown fences and isolate the first balanced JSON object. */
 function extractJson(text: string): string | null {
   let t = text.trim();
   // Remove ```json ... ``` fences if present.
@@ -90,7 +114,33 @@ function extractJson(text: string): string | null {
   if (fence) t = fence[1].trim();
 
   const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  return t.slice(start, end + 1);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < t.length; i++) {
+    const ch = t[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) return t.slice(start, i + 1);
+    }
+  }
+
+  return null;
 }

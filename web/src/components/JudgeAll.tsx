@@ -2,11 +2,18 @@
 
 import { useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
+import type { PublicClient } from "viem";
 import aiJudgeAbi from "@/abi/AIJudge";
-import { contractAddress, executorAddress } from "@/config/contract";
+import { contractAddress } from "@/config/contract";
 import { ritualChain } from "@/config/wagmi";
 import type { Bounty } from "@/lib/bounty";
-import { buildJudgeAllLlmInput, type JudgeSubmission } from "@/lib/ritualLlm";
+import {
+  buildPublicJudgeAllLlmInput,
+  buildPrivateJudgeAllLlmInput,
+  fetchLlmExecutorService,
+  type PublicJudgeSubmission,
+  type PrivateJudgeSubmission,
+} from "@/lib/ritualLlm";
 import { useWriteTx } from "@/hooks/useWriteTx";
 import { useRitualWalletStatus } from "@/hooks/useRitualWalletStatus";
 import { RitualWalletPanel } from "@/components/RitualWalletPanel";
@@ -35,9 +42,11 @@ export function JudgeAll({
   // contract) — judgeAll spends prepaid+locked RITUAL via the LLM precompile.
   const walletStatus = useRitualWalletStatus(address);
 
-  const count = Number(bounty.submissionCount);
+  const count = bounty.isPrivate
+    ? Number(bounty.submissionCount)
+    : Number(bounty.revealedSubmissionCount);
 
-  // Gate per spec: owner only, has submissions, not yet judged.
+  // Gate per spec: owner only, has eligible submissions, not yet judged.
   if (!isOwner || bounty.judged || bounty.finalized || count === 0) {
     return null;
   }
@@ -47,29 +56,13 @@ export function JudgeAll({
     setGatherError(null);
     setGathering(true);
     try {
-      // 1–2. Load every submission for this bounty.
-      const submissions: JudgeSubmission[] = [];
-      for (let i = 0; i < count; i++) {
-        const [submitter, answer] = await publicClient.readContract({
-          address: contractAddress,
-          abi: aiJudgeAbi,
-          functionName: "getSubmission",
-          args: [bountyId, BigInt(i)],
-        });
-        submissions.push({ index: i, submitter, answer });
-      }
-
-      // 3–4. Build the batch judging prompt and encode the Ritual LLM request.
-      const llmInput = buildJudgeAllLlmInput({
-        executorAddress,
-        title: bounty.title,
-        rubric: bounty.rubric,
-        submissions,
-      });
+      const executor = await fetchLlmExecutorService(publicClient);
+      const llmInput = bounty.isPrivate
+        ? await buildPrivateRequest(publicClient, bountyId, bounty, executor.address)
+        : await buildPublicRequest(publicClient, bountyId, bounty, executor.address);
 
       setGathering(false);
 
-      // 5. Submit it on-chain.
       await tx.run({
         address: contractAddress,
         abi: aiJudgeAbi,
@@ -94,7 +87,11 @@ export function JudgeAll({
     <Card>
       <CardHeader
         title="Judge all submissions"
-        subtitle="Sends one Ritual LLM request ranking every submission."
+        subtitle={
+          bounty.isPrivate
+            ? "Sends one Ritual LLM request over encrypted submissions."
+            : "Sends one Ritual LLM request ranking every submission."
+        }
       />
       <CardBody className="space-y-3">
         <Notice tone="indigo">AI review is advisory. The bounty owner finalizes the winner.</Notice>
@@ -119,4 +116,63 @@ export function JudgeAll({
       </CardBody>
     </Card>
   );
+}
+
+async function buildPublicRequest(
+  publicClient: PublicClient,
+  bountyId: bigint,
+  bounty: Bounty,
+  executor: `0x${string}`,
+) {
+  if (!contractAddress) throw new Error("contract not configured");
+
+  const submissions: PublicJudgeSubmission[] = [];
+  for (let i = 0; i < Number(bounty.revealedSubmissionCount); i++) {
+    const [, submitter, , answer] = (await publicClient.readContract({
+      address: contractAddress,
+      abi: aiJudgeAbi,
+      functionName: "getRevealedSubmission",
+      args: [bountyId, BigInt(i)],
+    })) as readonly [bigint, string, `0x${string}`, string, `0x${string}`];
+    submissions.push({ index: i, submitter, answer });
+  }
+
+  return buildPublicJudgeAllLlmInput({
+    executorAddress: executor,
+    title: bounty.title,
+    rubric: bounty.rubric,
+    submissions,
+  });
+}
+
+async function buildPrivateRequest(
+  publicClient: PublicClient,
+  bountyId: bigint,
+  bounty: Bounty,
+  executor: `0x${string}`,
+) {
+  if (!contractAddress) throw new Error("contract not configured");
+
+  const submissions: PrivateJudgeSubmission[] = [];
+  const encryptedSecrets: `0x${string}`[] = [];
+
+  for (let i = 0; i < Number(bounty.submissionCount); i++) {
+    const [submitter, , encryptedAnswer] = (await publicClient.readContract({
+      address: contractAddress,
+      abi: aiJudgeAbi,
+      functionName: "getPrivateSubmission",
+      args: [bountyId, BigInt(i)],
+    })) as readonly [string, `0x${string}`, `0x${string}`];
+
+    submissions.push({ index: i, submitter, secretKey: `SUBMISSION_${i}` });
+    encryptedSecrets.push(encryptedAnswer);
+  }
+
+  return buildPrivateJudgeAllLlmInput({
+    executorAddress: executor,
+    title: bounty.title,
+    rubric: bounty.rubric,
+    submissions,
+    encryptedSecrets,
+  });
 }

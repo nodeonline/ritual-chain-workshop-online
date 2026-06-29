@@ -6,17 +6,26 @@ import { contractAddress } from "@/config/contract";
 import { ritualChain } from "@/config/wagmi";
 import { shortenAddress } from "@/lib/format";
 import type { JudgeResult } from "@/lib/aiReview";
+import type { RevealedAnswersBundle } from "@/lib/revealedBundle";
 import { Card, CardHeader, CardBody, Badge } from "@/components/ui";
 
 export function SubmissionsList({
   bountyId,
   count,
+  isPrivate,
+  bundleRef,
+  revealedBundle,
   judge,
+  refreshToken,
   finalWinner,
 }: {
   bountyId: bigint;
   count: number;
+  isPrivate: boolean;
+  bundleRef?: string;
+  revealedBundle?: RevealedAnswersBundle | null;
   judge?: JudgeResult | null;
+  refreshToken?: number;
   finalWinner?: number;
 }) {
   const indices = Array.from({ length: count }, (_, i) => i);
@@ -25,7 +34,13 @@ export function SubmissionsList({
     <Card>
       <CardHeader
         title="Submissions"
-        subtitle="All submissions are judged together after the deadline."
+        subtitle={
+          isPrivate
+            ? bundleRef
+              ? "Encrypted submissions were judged in TEE and the bundle is available."
+              : "Encrypted submissions stay hidden until a post-judging bundle is available."
+            : "All submissions are judged together after the deadline."
+        }
         action={<Badge tone="zinc">{count}</Badge>}
       />
       <CardBody className="space-y-3">
@@ -34,9 +49,12 @@ export function SubmissionsList({
         ) : (
           indices.map((i) => (
             <SubmissionRow
-              key={i}
+              key={`${i}-${refreshToken ?? 0}`}
               bountyId={bountyId}
               index={i}
+              isPrivate={isPrivate}
+              bundleRef={bundleRef}
+              revealedAnswer={revealedBundle?.revealedAnswers?.find((a) => a.index === i)?.answer}
               ranking={judge?.ranking?.find((r) => r.index === i)}
               recommended={judge?.winnerIndex === i}
               isWinner={finalWinner === i}
@@ -51,27 +69,42 @@ export function SubmissionsList({
 function SubmissionRow({
   bountyId,
   index,
+  isPrivate,
+  bundleRef,
+  revealedAnswer,
   ranking,
   recommended,
   isWinner,
 }: {
   bountyId: bigint;
   index: number;
+  isPrivate: boolean;
+  bundleRef?: string;
+  revealedAnswer?: string;
   ranking?: { index: number; score: number; reason: string };
   recommended?: boolean;
   isWinner?: boolean;
 }) {
+  const functionName = isPrivate ? "getPrivateSubmission" : "getSubmission";
   const { data, isLoading } = useReadContract({
     address: contractAddress,
     abi: aiJudgeAbi,
-    functionName: "getSubmission",
+    functionName,
     args: [bountyId, BigInt(index)],
     chainId: ritualChain.id,
     query: { enabled: !!contractAddress },
   });
 
-  const submitter = data?.[0];
-  const answer = data?.[1];
+  const typedData = data as
+    | readonly [string, `0x${string}`, `0x${string}`]
+    | readonly [string, `0x${string}`, string, `0x${string}`, boolean, `0x${string}`]
+    | undefined;
+  const submitter = typedData?.[0];
+  const answer = isPrivate
+    ? bundleRef
+      ? revealedAnswer ?? "Bundle available. Waiting for plaintext fetch."
+      : "Encrypted submission hidden until the bundle is available."
+    : typedData?.[2];
 
   return (
     <div

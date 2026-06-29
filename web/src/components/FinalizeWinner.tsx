@@ -32,7 +32,9 @@ export function FinalizeWinner({
   isOwner: boolean;
   onFinalized: () => void;
 }) {
-  const count = Number(bounty.submissionCount);
+  const count = bounty.isPrivate
+    ? Number(bounty.submissionCount)
+    : Number(bounty.revealedSubmissionCount);
   const recommended = decodeAiReview(bounty.aiReview)?.parsed?.winnerIndex;
 
   // The input is prefilled with the AI recommendation until the owner edits it.
@@ -81,13 +83,15 @@ export function FinalizeWinner({
         </Notice>
 
         <Field
-          label="Winner index"
-          hint={
-            recommended !== undefined
-              ? `AI recommends #${recommended}. You decide the final winner.`
-              : `Choose a submission index (0–${Math.max(count - 1, 0)}).`
-          }
-        >
+        label="Winner index"
+        hint={
+          recommended !== undefined
+              ? `AI recommends revealed entry #${recommended}. You decide the final winner.`
+              : bounty.isPrivate
+                ? `Choose a private submission index (0–${Math.max(count - 1, 0)}).`
+                : `Choose a revealed submission index (0–${Math.max(count - 1, 0)}).`
+        }
+      >
           <Input
             type="number"
             min={0}
@@ -99,7 +103,9 @@ export function FinalizeWinner({
 
         {winnerIndex !== "" && !valid && (
           <p className="text-xs text-amber-300">
-            Index must be between 0 and {Math.max(count - 1, 0)}.
+            {bounty.isPrivate
+              ? `Index must be between 0 and ${Math.max(count - 1, 0)}.`
+              : `Index must be between 0 and ${Math.max(count - 1, 0)} because finalized public bounties select from revealed submissions, not all submissions.`}
           </p>
         )}
 

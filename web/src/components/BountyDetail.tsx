@@ -16,7 +16,7 @@ export function BountyDetail({
   isOwner: boolean;
 }) {
   const now = useNow();
-  const status = getBountyStatus(bounty, now / 1000);
+  const status = getBountyStatus(bounty, now);
   const meta = STATUS_META[status];
 
   return (
@@ -33,6 +33,7 @@ export function BountyDetail({
         action={
           <div className="flex items-center gap-2">
             {isOwner && <Badge tone="indigo">You own this</Badge>}
+            {bounty.isPrivate && <Badge tone="amber">Private</Badge>}
             <Badge tone={meta.tone}>{meta.label}</Badge>
           </div>
         }
@@ -47,7 +48,14 @@ export function BountyDetail({
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
           <Stat label="Reward" value={formatReward(bounty.reward)} />
-          <Stat label="Submissions" value={bounty.submissionCount.toString()} />
+          <Stat
+            label={bounty.isPrivate ? "Encrypted submissions" : "Submissions"}
+            value={bounty.submissionCount.toString()}
+          />
+          <Stat
+            label={bounty.isPrivate ? "Reveal phase" : "Revealed"}
+            value={bounty.isPrivate ? "TEE-only" : bounty.revealedSubmissionCount.toString()}
+          />
           <Stat
             label="Deadline"
             value={

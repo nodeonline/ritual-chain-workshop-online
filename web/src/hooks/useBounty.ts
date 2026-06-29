@@ -23,8 +23,24 @@ export function useBounty(bountyId?: bigint) {
   });
 
   const bounty: Bounty | undefined = query.data
-    ? parseBounty(query.data)
+    ? parseBounty(query.data as Parameters<typeof parseBounty>[0])
     : undefined;
+
+  const modeQuery = useReadContract({
+    address: contractAddress,
+    abi: aiJudgeAbi,
+    functionName: "isPrivateBounty",
+    args: bountyId !== undefined ? [bountyId] : undefined,
+    chainId: ritualChain.id,
+    query: {
+      enabled,
+      refetchInterval: 12_000,
+    },
+  });
+
+  if (bounty && typeof modeQuery.data === "boolean") {
+    bounty.isPrivate = modeQuery.data;
+  }
 
   return {
     bounty,

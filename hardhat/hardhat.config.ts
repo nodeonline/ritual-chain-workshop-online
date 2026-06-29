@@ -11,6 +11,7 @@ export default defineConfig({
       production: {
         version: "0.8.24",
         settings: {
+          viaIR: true,
           optimizer: {
             enabled: true,
             runs: 200,

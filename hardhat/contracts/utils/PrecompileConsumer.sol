@@ -25,13 +25,12 @@ abstract contract PrecompileConsumer {
     address internal constant PERSISTENT_AGENT_PRECOMPILE = address(0x0820);
 
     // System contracts
-    address internal constant ASYNC_DELIVERY =
-        0x5A16214fF555848411544b005f7Ac063742f39F6;
+    address internal constant ASYNC_DELIVERY = 0x5A16214fF555848411544b005f7Ac063742f39F6;
 
-    function _executePrecompile(
-        address precompile,
-        bytes memory input
-    ) internal returns (bytes memory) {
+    function _executePrecompile(address precompile, bytes memory input)
+        internal
+        returns (bytes memory)
+    {
         (bool success, bytes memory rawOutput) = precompile.call(input);
 
         if (!success) {
@@ -43,26 +42,18 @@ abstract contract PrecompileConsumer {
         // Short-running async precompiles return:
         // abi.encode(bytes simmedInput, bytes actualOutput)
         if (
-            precompile == HTTP_CALL_PRECOMPILE ||
-            precompile == LLM_INFERENCE_PRECOMPILE ||
-            precompile == DKMS_PRECOMPILE
+            precompile == HTTP_CALL_PRECOMPILE || precompile == LLM_INFERENCE_PRECOMPILE
+                || precompile == DKMS_PRECOMPILE
         ) {
-            (, bytes memory actualOutput) = abi.decode(
-                rawOutput,
-                (bytes, bytes)
-            );
+            (, bytes memory actualOutput) = abi.decode(rawOutput, (bytes, bytes));
             return actualOutput;
         }
 
         return rawOutput;
     }
 
-    function callSECP256R1SigVer(
-        bytes memory input
-    ) internal view returns (bytes memory) {
-        (bool success, bytes memory result) = SECP256R1_PRECOMPILE.staticcall(
-            input
-        );
+    function callSECP256R1SigVer(bytes memory input) internal view returns (bytes memory) {
+        (bool success, bytes memory result) = SECP256R1_PRECOMPILE.staticcall(input);
 
         require(success, "SECP256R1 precompile failed");
         return result;

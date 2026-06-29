@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  allowedDevOrigins: ["161.97.115.0"],
+  experimental: {
+    webpackBuildWorker: false,
+  },
 };
 
 export default nextConfig;

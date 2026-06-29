@@ -24,7 +24,9 @@ export function LoadBountyPanel({
       return;
     }
     try {
-      const id = BigInt(trimmed);
+      const normalized = extractLeadingInteger(trimmed);
+      if (normalized === null) return;
+      const id = BigInt(normalized);
       if (id < 0n) return;
       onSelect(id);
     } catch {
@@ -87,4 +89,9 @@ export function LoadBountyPanel({
       </CardBody>
     </Card>
   );
+}
+
+function extractLeadingInteger(value: string): string | null {
+  const match = value.match(/-?\d+/);
+  return match ? match[0] : null;
 }

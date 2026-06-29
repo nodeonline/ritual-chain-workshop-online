@@ -31,3 +31,6 @@ export const ritualChainId = Number(
 
 export const ritualRpcUrl =
   process.env.NEXT_PUBLIC_RITUAL_RPC_URL ?? "https://rpc.ritualfoundation.org";
+
+export const walletConnectProjectId =
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || undefined;
